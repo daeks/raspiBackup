@@ -31,7 +31,7 @@ if [ ! -n "$BASH" ] ;then
    exit 127
 fi
 
-VERSION="0.6.4.2-dev"	# -beta, -hotfix or -dev suffixes possible
+VERSION="0.6.4.3-dev"	# -beta, -hotfix or -dev suffixes possible
 
 # add pathes if not already set (usually not set in crontab)
 
@@ -58,11 +58,11 @@ MYSELF=${0##*/}
 MYNAME=${MYSELF%.*}
 MYPID=$$
 
-GIT_DATE="$Date: 2019-01-19 16:51:48 +0100$"
+GIT_DATE="$Date: 2019-01-19 21:03:33 +0100$"
 GIT_DATE_ONLY=${GIT_DATE/: /}
 GIT_DATE_ONLY=$(cut -f 2 -d ' ' <<< $GIT_DATE)
 GIT_TIME_ONLY=$(cut -f 3 -d ' ' <<< $GIT_DATE)
-GIT_COMMIT="$Sha1: 246bdc9$"
+GIT_COMMIT="$Sha1: 67129a2$"
 GIT_COMMIT_ONLY=$(cut -f 2 -d ' ' <<< $GIT_COMMIT | sed 's/\$//')
 
 GIT_CODEVERSION="$MYSELF $VERSION, $GIT_DATE_ONLY/$GIT_TIME_ONLY - $GIT_COMMIT_ONLY"
@@ -3116,13 +3116,13 @@ function tarBackup() {
 		--exclude=\"$BACKUPPATH_PARAMETER/*\" \
 		--exclude=\"$source/$log_file\" \
 		--exclude='.gvfs' \
-		--exclude=$devroot/proc \
-		--exclude=$devroot/lost+found \
-		--exclude=$devroot/sys \
-		--exclude=$devroot/dev \
-		--exclude=$devroot/tmp \
-		--exclude=$devroot/boot \
-		--exclude=$devroot/run \
+		--exclude=$devroot/proc/* \
+		--exclude=$devroot/lost+found/* \
+		--exclude=$devroot/sys/* \
+		--exclude=$devroot/dev/* \
+		--exclude=$devroot/tmp/* \
+		--exclude=$devroot/boot/* \
+		--exclude=$devroot/run/* \
 		$EXCLUDE_LIST \
 		$source"
 
@@ -5950,6 +5950,7 @@ if (( ! $RESTORE )); then
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_INSTANCE_ACTIVE
 		exitError $RC_MISC_ERROR
 	fi
+fi
 
 	writeToConsole $MSG_LEVEL_MINIMAL $MSG_STARTED "$HOSTNAME" "$MYSELF" "$VERSION" "$GIT_COMMIT_ONLY" "$(date)"
 	(( $IS_BETA )) && writeToConsole $MSG_LEVEL_MINIMAL $MSG_INTRO_BETA_MESSAGE
