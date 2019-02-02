@@ -58,11 +58,11 @@ MYSELF=${0##*/}
 MYNAME=${MYSELF%.*}
 MYPID=$$
 
-GIT_DATE="$Date: 2019-01-20 10:01:27 +0100$"
+GIT_DATE="$Date: 2019-02-02 15:29:11 +0100$"
 GIT_DATE_ONLY=${GIT_DATE/: /}
 GIT_DATE_ONLY=$(cut -f 2 -d ' ' <<< $GIT_DATE)
 GIT_TIME_ONLY=$(cut -f 3 -d ' ' <<< $GIT_DATE)
-GIT_COMMIT="$Sha1: 42c889f$"
+GIT_COMMIT="$Sha1: c6c387a$"
 GIT_COMMIT_ONLY=$(cut -f 2 -d ' ' <<< $GIT_COMMIT | sed 's/\$//')
 
 GIT_CODEVERSION="$MYSELF $VERSION, $GIT_DATE_ONLY/$GIT_TIME_ONLY - $GIT_COMMIT_ONLY"
@@ -415,8 +415,8 @@ MSG_CREATING_MBR_BACKUP=46
 MSG_EN[$MSG_CREATING_MBR_BACKUP]="RBK0046I: Creating backup of master boot record in %s."
 MSG_DE[$MSG_CREATING_MBR_BACKUP]="RBK0046I: Backup des Masterbootrecords wird in %s erstellt."
 MSG_START_SERVICES_FAILED=47
-MSG_EN[$MSG_START_SERVICES_FAILED]="RBK0047E: Error occured when starting services. RC %s."
-MSG_DE[$MSG_START_SERVICES_FAILED]="RBK0047E: Ein Fehler trat beim Starten von Services auf. RC %s."
+MSG_EN[$MSG_START_SERVICES_FAILED]="RBK0047W: Error occured when starting services. RC %s."
+MSG_DE[$MSG_START_SERVICES_FAILED]="RBK0047W: Ein Fehler trat beim Starten von Services auf. RC %s."
 MSG_STOP_SERVICES_FAILED=48
 MSG_EN[$MSG_STOP_SERVICES_FAILED]="RBK0048E: Error occured when stopping services. RC %s."
 MSG_DE[$MSG_STOP_SERVICES_FAILED]="RBK0048E: Ein Fehler trat beim Beenden von Services auf. RC %s."
@@ -1872,7 +1872,7 @@ function stopServices() {
 	logExit "stopServices"
 }
 
-function startServices() { # noexit
+function startServices() {
 
 	logEntry "startServices"
 
@@ -1889,9 +1889,6 @@ function startServices() { # noexit
 				local rc=$?
 				if [[ $rc != 0 ]]; then
 					writeToConsole $MSG_LEVEL_MINIMAL $MSG_START_SERVICES_FAILED "$rc"
-					if [[ "$1" != "noexit" ]]; then
-						exitError $RC_START_SERVICES_ERROR
-					fi
 				fi
 				STOPPED_SERVICES=0
 			fi
@@ -2670,7 +2667,7 @@ function cleanupBackup() { # trap
 		echo "Invocation parms: '$INVOCATIONPARMS'" >> "$LOG_FILE"
 
 		if [[ $rc == $RC_STOP_SERVICES_ERROR ]] || (( $STOPPED_SERVICES )); then
-			startServices "noexit"
+			startServices
 		fi
 
 		if [[ $rc != $RC_CTRLC ]]; then
@@ -3948,7 +3945,7 @@ function commonChecks() {
 			writeToConsole $MSG_LEVEL_MINIMAL $MSG_MAILPROGRAM_NOT_INSTALLED $EMAIL_PROGRAM
 			exitError $RC_MISSING_COMMANDS
 		fi
-		if [[ "$MAIL_PROGRAM" == $EMAIL_SSMTP_PROGRAM && (( $APPEND_LOG )) ]]; then
+		if [[ (( "$MAIL_PROGRAM" == $EMAIL_SSMTP_PROGRAM || "$MAIL_PROGRAM" == $EMAIL_MSMTP_PROGRAM )) && (( $APPEND_LOG )) ]]; then
 			if ! which mpack &>/dev/null; then
 				writeToConsole $MSG_LEVEL_MINIMAL $MSG_MPACK_NOT_INSTALLED
 				APPEND_LOG=0
