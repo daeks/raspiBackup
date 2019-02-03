@@ -58,11 +58,11 @@ MYSELF=${0##*/}
 MYNAME=${MYSELF%.*}
 MYPID=$$
 
-GIT_DATE="$Date: 2019-02-02 15:29:11 +0100$"
+GIT_DATE="$Date: 2019-02-02 20:33:43 +0100$"
 GIT_DATE_ONLY=${GIT_DATE/: /}
 GIT_DATE_ONLY=$(cut -f 2 -d ' ' <<< $GIT_DATE)
 GIT_TIME_ONLY=$(cut -f 3 -d ' ' <<< $GIT_DATE)
-GIT_COMMIT="$Sha1: c6c387a$"
+GIT_COMMIT="$Sha1: bc45475$"
 GIT_COMMIT_ONLY=$(cut -f 2 -d ' ' <<< $GIT_COMMIT | sed 's/\$//')
 
 GIT_CODEVERSION="$MYSELF $VERSION, $GIT_DATE_ONLY/$GIT_TIME_ONLY - $GIT_COMMIT_ONLY"
@@ -860,9 +860,6 @@ MSG_DE[$MSG_UPDATE_TO_VERSION]="RBK0190I: Es wird $MYSELF von Version %s auf Ver
 MSG_ADJUSTING_DISABLED=191
 MSG_EN[$MSG_ADJUSTING_DISABLED]="RBK0191E: Target %s with %s is smaller than backup source with %s. root partition resizing is disabled."
 MSG_DE[$MSG_ADJUSTING_DISABLED]="RBK0191E: Ziel %s mit %s ist kleiner als die Backupquelle mit %s. Verkleinern der root Partition ist ausgeschaltet."
-#MSG_TAR_EXT_OPT_RESTORE=191
-#MSG_EN[$MSG_TAR_EXT_OPT_RESTORE]="RBK0191I: Restoring extended attributes and acls with tar"
-#MSG_DE[$MSG_TAR_EXT_OPT_RESTORE]="RBK0191I: Extended Attribute und ACLs werden mit tar zurückgesichert"
 MSG_INTRO_DEV_MESSAGE=192
 MSG_EN[$MSG_INTRO_DEV_MESSAGE]="RBK0192W: =========> NOTE  <========= \
 ${NL}!!! RBK0173W: This is a development version and should not be used in production. \
@@ -876,9 +873,9 @@ MSG_DE[$MSG_MISSING_COMMANDS]="RBK0193E: Erforderliche Befehle '%s' nicht vorhan
 MSG_MISSING_PACKAGES=194
 MSG_EN[$MSG_MISSING_PACKAGES]="RBK0194E: Missing required packages. Install them with 'sudo apt-get install %s'."
 MSG_DE[$MSG_MISSING_PACKAGES]="RBK0194E: Erforderliche Pakete nicht installiert. Installiere sie mit 'sudo apt-get install %s'"
-#MSG_SAVE_LOGFILE=195
-#MSG_EN[$MSG_SAVE_LOGFILE]="RBK0195I: Logfile saved in %s."
-#MSG_DE[$MSG_SAVE_LOGFILE]="RBK0195I: Logdatei wird in %s gesichert."
+MSG_UPDATE_TO_SHA=195
+MSG_EN[$MSG_UPDATE_TO_SHA]="RBK0192I: There is a new minor code change of $MYSELF %s available. Upgrading current code level from %s to %s."
+MSG_DE[$MSG_UPDATE_TO_SHA]="RBK0192I: Es ist eine keine Codeänderung von $MYSELF %s verfügbar. Den momentanen Codelevel von %s auf %s upgraden."
 MSG_NO_HARDLINKS_USED=196
 MSG_EN[$MSG_NO_HARDLINKS_USED]="RBK0196W: No hardlinks supported on %s."
 MSG_DE[$MSG_NO_HARDLINKS_USED]="RBK0196W: %s unterstützt keine Hardlinks."
@@ -980,7 +977,7 @@ function logStack () {
 
 function callExtensions() { # extensionplugpoint rc
 
-	logEntry "callExtensions: $1"
+	logEntry "$1"
 
 	local extension
 
@@ -1023,7 +1020,7 @@ function callExtensions() { # extensionplugpoint rc
 		done
 	fi
 
-	logExit "callExtensions"
+	logExit
 
 }
 
@@ -1158,14 +1155,14 @@ function saveVars() {
 
 function exitError() { # {rc}
 
-	logEntry "exitError $1"
+	logEntry "$1"
 	if [[ -n "$1" ]]; then
 		rc="$1"
 	else
 		assertionFailed $LINENO "Unkown exit error"
 	fi
 
-	logExit "exitError $rc"
+	logExit "$rc"
 	exit $rc
 }
 
@@ -1177,7 +1174,7 @@ function executeCommand() { # command - rc's to accept
 	if (( $INTERACTIVE )); then
 		eval "$1"
 	else
-		eval "$1" >> $LOG_FILE
+		eval "$1 &>> $LOG_FILE"
 	fi
 	rc=$?
 	if (( $rc != 0 )); then
@@ -1197,14 +1194,14 @@ function executeCommand() { # command - rc's to accept
 
 function executeShellCommand() { # command
 
-	logEntry "executeShellCommand: $@"
+	logEntry "$@"
 	if (( $INTERACTIVE )); then
 		eval "$1"
 	else
-		eval "$1" >> $LOG_FILE
+		eval "$1 &>> $LOG_FILE"
 	fi
 	local rc=$?
-	logExit "executeShellCommand: $rc"
+	logExit "$rc"
 	return $rc
 }
 
@@ -1226,9 +1223,6 @@ function logIntoOutput() { # logtype message
 			$LOG_OUTPUT_VARLOG | $LOG_OUTPUT_BACKUPLOC | $LOG_OUTPUT_HOME)
 				echo "$dte: ${LOG_TYPEs[$type]} $indent $@" >> "$LOG_FILE"
 				;;
-			$LOG_OUTPUT_MAIL)
-				echo "$dte: ${LOG_TYPEs[$type]} $indent $@" >> "$LOG_MAIL_FILE"
-				;;
 			*)
 				echo "$dte: ${LOG_TYPEs[$type]} $indent $@" >> "$LOG_FILE"
 				;;
@@ -1243,36 +1237,45 @@ function repeat() { # char num
 	echo $s
 }
 
+function log() { # logtype message
+	local lineno=${BASH_LINENO[1]}
+	local dte=$(date +%Y%m%d-%H%M%S)
+	local indent=$(printf '%*s' "$LOG_INDENT")
+	printf "%s: DBG: %04d - %s %s\n" "$dte" "$lineno" "$indent" "$@" >> "$LOG_FILE"
+}
+
 function logItem() { # message
 	if [[ $LOG_DEBUG == $LOG_LEVEL ]]; then
-		logIntoOutput $LOG_TYPE_DEBUG "-- $1"
+		while read line; do
+			log "$line"
+		done <<<"$1"
 	fi
 }
 
-function logEntry() { # message
-	(( LOG_INDENT+=3 ))
+function logEntry() {
 	if [[ $LOG_DEBUG == $LOG_LEVEL ]]; then
-		logIntoOutput $LOG_TYPE_DEBUG ">> $1"
+		log "-> ${FUNCNAME[1]} $@"
+		(( LOG_INDENT+=3 ))
 	fi
 }
 
-function logExit() { # message
+function logExit() {
 	if [[ $LOG_DEBUG == $LOG_LEVEL ]]; then
-		logIntoOutput $LOG_TYPE_DEBUG "<< $1"
+		(( LOG_INDENT-=3 ))
+		log "<- ${FUNCNAME[1]} $@"
 	fi
-	(( LOG_INDENT-=3 ))
 }
 
 function logSystem() {
-	logEntry "logSystem"
+	logEntry
 	[[ -f /etc/os-release ]] &&	logItem "$(cat /etc/os-release)"
 	[[ -f /etc/debian_version ]] &&	logItem "$(cat /etc/debian_version)"
-	logExit "logSystem"
+	logExit
 }
 
 function logSystemStatus() {
 
-	logEntry "logSystemStatus"
+	logEntry
 
 	if (( $SYSTEMSTATUS )); then
 		if ! which lsof &>/dev/null; then
@@ -1283,7 +1286,7 @@ function logSystemStatus() {
 			fi
 	fi
 
-	logExit "logSystemStatus"
+	logExit
 
 }
 
@@ -1304,12 +1307,11 @@ function duration() { # startTime endTime
 
 function logOptions() {
 
-	logEntry "logOptions"
+	logEntry
 
 	logItem "$(uname -a)"
 
 	logItem "Options: $INVOCATIONPARMS"
-	logExit "logOptions"
 	logItem "APPEND_LOG=$APPEND_LOG"
 	logItem "APPEND_LOG_OPTION=$APPEND_LOG_OPTION"
 	logItem "BACKUPPATH=$BACKUPPATH"
@@ -1358,6 +1360,8 @@ function logOptions() {
 	logItem "USE_HARDLINKS=$USE_HARDLINKS"
 	logItem "VERBOSE=$VERBOSE"
 	logItem "ZIP_BACKUP=$ZIP_BACKUP"
+
+	logExit
 
 }
 
@@ -1471,12 +1475,11 @@ DEFAULT_RESTORE_REMINDER_REPEAT=3
 
 function logOptions() {
 
-	logEntry "logOptions"
+	logEntry
 
 	logItem "$(uname -a)"
 
 	logItem "Options: $INVOCATIONPARMS"
-	logExit "logOptions"
 	logItem "APPEND_LOG=$APPEND_LOG"
 	logItem "APPEND_LOG_OPTION=$APPEND_LOG_OPTION"
 	logItem "BACKUPPATH=$BACKUPPATH"
@@ -1527,16 +1530,8 @@ function logOptions() {
 	logItem "USE_HARDLINKS=$USE_HARDLINKS"
 	logItem "VERBOSE=$VERBOSE"
 	logItem "ZIP_BACKUP=$ZIP_BACKUP"
-
+	logExit
 }
-
-LOG_MAIL_FILE="/tmp/${MYNAME}.maillog"
-LOG_TOOL_FILE="/tmp/${MYNAME}_$$.log"
-#logItem "Removing maillog file ${LOG_MAIL_FILE}"
-rm -f "$LOG_MAIL_FILE" &>/dev/null
-LOG_FILE="$CURRENT_DIR/${MYNAME}.log"
-#logItem "Removing log file ${LOG_FILE}"
-rm -f "$LOG_FILE" &>/dev/null
 
 initializeDefaultConfig
 
@@ -1598,7 +1593,7 @@ function substituteNumberArguments() {
 }
 
 function bootedFromSD() {
-	logEntry "bootedFromSD"
+	logEntry
 	local rc
 	logItem "Boot device: $BOOT"
 	if [[ $BOOT_DEVICE =~ mmcblk[0-9]+ ]]; then
@@ -1606,7 +1601,7 @@ function bootedFromSD() {
 	else
 		rc=1			# is /dev/sda1 or other
 	fi
-	logExit "bootedFromSD: $rc"
+	logExit "$rc"
 	return $rc
 }
 
@@ -1619,7 +1614,7 @@ function bootedFromSD() {
 
 function getPartitionPrefix() { # device
 
-	logEntry "getPartitionPrefix: $1"
+	logEntry "$1"
 	if [[ $1 =~ ^(mmcblk|loop|sd[a-z]) ]]; then
 		local pref="$1"
 		[[ $1 =~ ^(mmcblk|loop) ]] && pref="${1}p"
@@ -1628,7 +1623,7 @@ function getPartitionPrefix() { # device
 		assertionFailed $LINENO "Unable to retrieve partition prefix for device $1"
 	fi
 
-	logExit "getPartitionPrefix: $pref"
+	logExit "$pref"
 	echo "$pref"
 
 }
@@ -1642,7 +1637,7 @@ function getPartitionPrefix() { # device
 
 function getPartitionNumber() { # deviceName
 
-	logEntry "getPartitionNumber $1"
+	logEntry "$1"
 	local id
 	if [[ $1 =~ ^/dev/(mmcblk|loop)[0-9]+p([0-9]+) || $1 =~ ^/dev/(sd[a-z])([0-9]+) ]]; then
 		id=${BASH_REMATCH[2]}
@@ -1650,13 +1645,13 @@ function getPartitionNumber() { # deviceName
 		assertionFailed $LINENO "Unable to retrieve partition number from deviceName $1"
 	fi
 	echo "$id"
-	logExit "getPartitionNumber $id"
+	logExit "$id"
 
 }
 
 function isUpdatePossible() {
 
-	logEntry "isUpdatePossible"
+	logEntry ""
 
 	versions=( $(isNewVersionAvailable) )
 	version_rc=$?
@@ -1664,20 +1659,20 @@ function isUpdatePossible() {
 		NEWS_AVAILABLE=1
 		UPDATE_POSSIBLE=1
 		latestVersion="${versions[0]}"
-	  newVersion="${versions[1]}"
+		newVersion="${versions[1]}"
 		oldVersion="${versions[2]}"
 
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_NEW_VERSION_AVAILABLE "$newVersion" "$oldVersion"
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_VISIT_VERSION_HISTORY_PAGE "$(getLocalizedMessage $MSG_VERSION_HISTORY_PAGE)"
 	fi
 
-	logExit "isUpdatePossible"
+	logExit ""
 
 }
 
 function downloadPropertiesFile() { # FORCE
 
-	logEntry "downloadPropertiesFile"
+	logEntry
 
 	NEW_PROPERTIES_FILE=0
 
@@ -1709,7 +1704,7 @@ function downloadPropertiesFile() { # FORCE
 		parsePropertiesFile
 	fi
 
-	logExit "downloadPropertiesFile - $NEW_PROPERTIES_FILE"
+	logExit "$NEW_PROPERTIES_FILE"
 	return
 }
 
@@ -1720,7 +1715,7 @@ function downloadPropertiesFile() { # FORCE
 
 function parsePropertiesFile() {
 
-	logEntry "parsePropertiesFile"
+	logEntry
 
 	local properties=$(grep "^VERSION=" "$LATEST_TEMP_PROPERTY_FILE" 2>/dev/null)
 	[[ $properties =~ $PROPERTY_REGEX ]] && VERSION_PROPERTY=${BASH_REMATCH[1]}
@@ -1734,15 +1729,18 @@ function parsePropertiesFile() {
 	properties=$(grep "^BETA=" "$LATEST_TEMP_PROPERTY_FILE" 2>/dev/null)
 	[[ $properties =~ $PROPERTY_REGEX ]] && BETA_PROPERTY=${BASH_REMATCH[1]}
 
-	logItem "Properties: v: $VERSION_PROPERTY i: $INCOMPATIBLE_PROPERTY d: $DEPRECATED_PROPERTY b: $BETA_PROPERTY"
+	properties=$(grep "^SHA=" "$LATEST_TEMP_PROPERTY_FILE" 2>/dev/null)
+	[[ $properties =~ $PROPERTY_REGEX ]] && SHA_PROPERTY=${BASH_REMATCH[1]}
 
-	logExit "parsePropertiesFile"
+	logItem "Properties: v: $VERSION_PROPERTY i: $INCOMPATIBLE_PROPERTY d: $DEPRECATED_PROPERTY s: $SHA_PROPERTY b: $BETA_PROPERTY"
+
+	logExit
 
 }
 
 function shouldRenewDownloadPropertiesFile() { # FORCE
 
-	logEntry "shouldDownloadPropertiesFile"
+	logEntry
 
 	local rc
 
@@ -1765,7 +1763,7 @@ function shouldRenewDownloadPropertiesFile() { # FORCE
 		rc=0
 	fi
 
-	logExit "shouldDownloadPropertiesFile - rc: $rc"
+	logExit "$rc"
 	return $rc
 }
 
@@ -1796,7 +1794,7 @@ function askYesNo() {
 
 function isNewVersionAvailable() {
 
-	logEntry "isNewVersionAvailable"
+	logEntry
 
 	local newVersion="0.0"
 	local latestVersion="0.0"
@@ -1841,7 +1839,7 @@ function isNewVersionAvailable() {
 
 	logItem "Returning: $result"
 
-	logExit "isNewVersionAvailable - RC: $rc"
+	logExit "$rc"
 
 	return $rc
 
@@ -1849,7 +1847,7 @@ function isNewVersionAvailable() {
 
 function stopServices() {
 
-	logEntry "stopServices"
+	logEntry
 
 	if [[ -n "$STOPSERVICES" ]]; then
 		if [[ "$STOPSERVICES" =~ $NOOP_AO_ARG_REGEX ]]; then
@@ -1869,12 +1867,12 @@ function stopServices() {
 		fi
 	fi
 	logSystemStatus
-	logExit "stopServices"
+	logExit
 }
 
 function startServices() {
 
-	logEntry "startServices"
+	logEntry
 
 	logSystemStatus
 
@@ -1894,14 +1892,14 @@ function startServices() {
 			fi
 		fi
 	fi
-	logExit "startServices"
+	logExit
 }
 
 # update script with latest version
 
 function updateScript() {
 
-	logEntry "updateScript"
+	logEntry
 
 	local rc versions latestVersion newVersion oldVersion newName
 	local updateNow=0
@@ -1927,11 +1925,18 @@ function updateScript() {
 		fi
 
 		local betaVersion=$(isBetaAvailable)
-
 		if [[ -n $betaVersion && "${betaVersion}-beta" > $oldVersion ]]; then
 			writeToConsole $MSG_LEVEL_MINIMAL $MSG_UPDATE_TO_BETA "$oldVersion" "${betaVersion}-beta"
 			if askYesNo; then
 				DOWNLOAD_URL="$BETA_DOWNLOAD_URL"
+				updateNow=1
+			fi
+		fi
+
+		local sha=$(extractSHAFromFile $SCRIPT_DIR/$MYSELF)
+		if [[ $rc != 0 ]] && (( ! $updateNow )) && [[ "$sha" != "$SHA_PROPERTY" ]]; then
+			writeToConsole $MSG_LEVEL_MINIMAL $MSG_UPDATE_TO_SHA "$oldVersion" "$sha" "${SHA_PROPERTY}"
+			if askYesNo; then
 				updateNow=1
 			fi
 		fi
@@ -1969,7 +1974,7 @@ function updateScript() {
 		fi
 	fi
 
-	logExit "updateScript"
+	logExit
 
 }
 
@@ -1977,7 +1982,7 @@ function updateScript() {
 
 function supportsHardlinks() {	# directory
 
-	logEntry "supportsHardlinks: $1"
+	logEntry "$1"
 
 	local links
 	local result=1 # no
@@ -1990,7 +1995,7 @@ function supportsHardlinks() {	# directory
 	rm -f /$1/$MYNAME.hlinkfile &>/dev/null
 	rm -f /$1/$MYNAME.hlinklink &>/dev/null
 
-	logExit "supportsHardlinks: $result"
+	logExit "$result"
 
 	return $result
 }
@@ -1999,7 +2004,7 @@ function supportsHardlinks() {	# directory
 
 function supportsSymlinks() {	# directory
 
-	logEntry "supportsSymlinks: $1"
+	logEntry "$1"
 
 	local result=1	# no
 	touch /$1/$MYNAME.slinkfile
@@ -2008,14 +2013,14 @@ function supportsSymlinks() {	# directory
 	rm -f /$1/$MYNAME.slinkfile &>/dev/null
 	rm -f /$1/$MYNAME.slinklink &>/dev/null
 
-	logExit "supportsSymlinks: $result"
+	logExit "$result"
 
 	return $result
 }
 
 function isMounted() { # dir
 	local rc
-	logEntry "isMounted $1"
+	logEntry "$1"
 	if [[ -n "$1" ]]; then
 		logItem $(cat /proc/mounts)
 		$(grep -qs "$1" /proc/mounts)
@@ -2023,19 +2028,19 @@ function isMounted() { # dir
 	else
 		rc=1
 	fi
-	logExit "isMounted $rc"
+	logExit "$rc"
 	return $rc
 }
 
 function getFsType() { # file or path
 
-	logEntry "getFsType: $1"
+	logEntry "$1"
 
 	local fstype=$(df -T "$1" | grep "^/" | awk '{ print $2 }')
 
 	echo $fstype
 
-	logExit "getFsType: $fstype"
+	logExit "$fstype"
 
 }
 
@@ -2052,7 +2057,7 @@ function assertCommandAvailable() { # command package
 
 function isPathMounted() {
 
-	logEntry "isPathMounted: $1"
+	logEntry "$1"
 
 	local path
 	local rc=1
@@ -2067,7 +2072,7 @@ function isPathMounted() {
 		path=${path%/*}
 	done
 
-	logExit "isPathMounted: $rc"
+	logExit "$rc"
 
 	return $rc
 }
@@ -2224,7 +2229,7 @@ function setupEnvironment() {
 
 function deployMyself() {
 
-	logEntry "deployMyself"
+	logEntry
 
 	for hostLogon in $DEPLOYMENT_HOSTS; do
 
@@ -2252,7 +2257,7 @@ function deployMyself() {
 		fi
 	done
 
-   	logExit "deployMyself"
+   	logExit
 
 }
 
@@ -2266,7 +2271,7 @@ function deployMyself() {
 
 function calcSumSizeFromSFDISK() { # sfdisk file name
 
-	logEntry "calcSumSizeFromSFDISK $1"
+	logEntry "$1"
 
 	local file="$1"
 
@@ -2309,12 +2314,12 @@ function calcSumSizeFromSFDISK() { # sfdisk file name
 
 	echo "$sumSize"
 
-	logExit "calcSumSizeFromSFDISK $sumSize"
+	logExit "$sumSize"
 }
 
 function sendEMail() { # content subject
 
-	logEntry "sendEMail"
+	logEntry
 
 	if [[ -n "$EMAIL" && rc != $RC_CTRLC ]]; then
 		local attach content subject
@@ -2408,7 +2413,7 @@ function sendEMail() { # content subject
 		fi
 
 	fi
-	logExit "sendEMail"
+	logExit
 
 }
 
@@ -2418,7 +2423,7 @@ function noop() {
 
 function cleanupBackupDirectory() {
 
-	logEntry "cleanupBackupDirectory"
+	logEntry
 
 	if [[ $rc != 0 ]] || (( $FAKE_BACKUPS )); then
 
@@ -2456,7 +2461,7 @@ function cleanupBackupDirectory() {
 
 	writeToConsole $MSG_LEVEL_DETAILED $MSG_SAVED_LOG "$LOG_FILE"
 
-	logExit "cleanupBackupDirectory"
+	logExit
 }
 
 function cleanup() { # trap
@@ -2498,7 +2503,7 @@ function cleanup() { # trap
 
 function cleanupRestore() { # trap
 
-	logEntry "cleanupRestore"
+	logEntry
 
 	local error=0
 
@@ -2526,13 +2531,13 @@ function cleanupRestore() { # trap
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_RESTORE_OK
 	fi
 
-	logExit "cleanupRestore - exit with $rc"
+	logExit "$rc"
 
 }
 
 function resizeRootFS() {
 
-	logEntry "resizeRootFS"
+	logEntry
 
 	local partitionStart
 
@@ -2565,16 +2570,21 @@ w
 q
 EOF
 
-	logExit "resizeRootFS"
+	logExit
 }
 
 function extractVersionFromFile() { # fileName
-	echo $(grep "^VERSION=" "$1" | cut -f 2 -d = | sed  "s/\"//g" | sed "s/#.*//")
+	echo $(grep "^VERSION=" "$1" | cut -f 2 -d = | sed  -e "s/\"//g" -e "s/#.*//")
+}
+
+# GIT_COMMIT="$Sha1: bc45475$"
+function extractSHAFromFile() { # fileName
+	echo $(grep "^GIT_COMMIT=" "$1" | cut -f 2 -d ' ' | sed  -e "s/[\"\$]//g")
 }
 
 function revertScriptVersion() {
 
-	logEntry "revertScriptVersion"
+	logEntry
 
 	local existingVersionFiles=( $(ls $SCRIPT_DIR/$MYNAME.*sh) )
 
@@ -2635,13 +2645,13 @@ function revertScriptVersion() {
 	logItem "cp -a ${versionsOfFiles[$version]} $SCRIPT_DIR/$MYNAME.sh"
 	cp -a "${versionsOfFiles[$version]}" "$SCRIPT_DIR/$MYNAME.sh"
 
-	logExit "revertScriptVersion"
+	logExit
 
 }
 
 function isBetaAvailable() {
 
-	logEntry "isBetaAvailable"
+	logEntry
 
 	local betaVersion=""
 
@@ -2651,20 +2661,20 @@ function isBetaAvailable() {
 
 	echo $betaVersion
 
-	logExit "isBetaAvailable: $betaVersion"
+	logExit "$betaVersion"
 
 }
 
 function cleanupBackup() { # trap
 
-	logEntry "cleanupBackup"
+	logEntry
 
 	logItem "Got trap $1"
 	logItem "rc: $rc"
 
 	if (( $rc !=  0 )); then
 
-		echo "Invocation parms: '$INVOCATIONPARMS'" >> "$LOG_FILE"
+		logItem "Invocation parms: '$INVOCATIONPARMS'"
 
 		if [[ $rc == $RC_STOP_SERVICES_ERROR ]] || (( $STOPPED_SERVICES )); then
 			startServices
@@ -2695,13 +2705,13 @@ function cleanupBackup() { # trap
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_BACKUP_FAILED
 	fi
 
-	logExit  "cleanupBackup"
+	logExit
 
 }
 
 function cleanupTempFiles() {
 
-	logEntry "cleanupTempFiles"
+	logEntry
 
 	if [[ -f "$LOG_MAIL_FILE" ]]; then
 		logItem "Removing mailfile $LOG_MAIL_FILE"
@@ -2713,12 +2723,7 @@ function cleanupTempFiles() {
 		rm -f $MYSELF~ &>/dev/null
 	fi
 
-	if [[ -f $LOG_TOOL_FILE ]]; then
-		logItem "Removing $LOG_TOOL_FILE"
-		rm -f $LOG_TOOL_FILE &>/dev/null
-	fi
-
-	logExit "cleanupTempFiles"
+	logExit
 
 }
 
@@ -2777,7 +2782,7 @@ function checkAndCorrectImportantParameters() {
 
 function createLinks() { # backuptargetroot extension newfile
 
-	logEntry "createLinks $1 $2 $3"
+	logEntry "$1 $2 $3"
 	local file
 
 	local possibleLinkTargetDirectory=$(ls -d $1/*-$BACKUPTYPE-backup-* 2>/dev/null | tail -2 | head -1)
@@ -2812,12 +2817,12 @@ function createLinks() { # backuptargetroot extension newfile
 		fi
 	fi
 
-	logExit "createLinks"
+	logExit
 }
 
 function bootPartitionBackup() {
 
-		logEntry "bootPartitionBackup"
+		logEntry
 
 		local p rc
 
@@ -2834,9 +2839,9 @@ function bootPartitionBackup() {
 					touch "$BACKUPTARGET_DIR/$BACKUPFILES_PARTITION_DATE.$ext"
 				else
 					if (( $TAR_BOOT_PARTITION_ENABLED )); then
-						cmd="tar $TAR_BACKUP_OPTIONS -f \"$BACKUPTARGET_DIR/$BACKUPFILES_PARTITION_DATE.$ext\" /boot &>>$LOG_FILE"
+						cmd="tar $TAR_BACKUP_OPTIONS -f \"$BACKUPTARGET_DIR/$BACKUPFILES_PARTITION_DATE.$ext\" /boot"
 					else
-						cmd="dd if=/dev/${BOOT_PARTITION_PREFIX}1 of=\"$BACKUPTARGET_DIR/$BACKUPFILES_PARTITION_DATE.$ext\" bs=1M &>>$LOG_FILE"
+						cmd="dd if=/dev/${BOOT_PARTITION_PREFIX}1 of=\"$BACKUPTARGET_DIR/$BACKUPFILES_PARTITION_DATE.$ext\" bs=1M"
 					fi
 
 					executeCommand "$cmd"
@@ -2901,12 +2906,12 @@ function bootPartitionBackup() {
 
 		logItem "Finished boot partition backup..."
 
-		logExit  "bootPartitionBackup"
+		logExit
 
 }
 function partitionLayoutBackup() {
 
-		logEntry "partitionLayoutBackup"
+		logEntry
 
 		local p partitionname rc
 
@@ -2973,13 +2978,13 @@ function partitionLayoutBackup() {
 			fi
 		fi
 
-		logExit  "partitionLayoutBackup"
+		logExit
 
 }
 
 function ddBackup() {
 
-	logEntry  "ddBackup"
+	logEntry
 
 	local cmd verbose partition fakecmd cnt
 
@@ -3069,7 +3074,7 @@ function ddBackup() {
 		fi
 	fi
 
-	logExit  "ddBackup $rc"
+	logExit  "$rc"
 
 	return $rc
 }
@@ -3078,7 +3083,7 @@ function tarBackup() {
 
 	local verbose zip cmd partition source target fakecmd devroot sourceDir
 
-	logEntry  "tarBackup"
+	logEntry
 
 	(( $PROGRESS )) && VERBOSE=1
 
@@ -3138,7 +3143,7 @@ function tarBackup() {
 
 	(( $PARTITIONBASED_BACKUP )) && popd &>>$LOG_FILE
 
-	logExit  "tarBackup $rc"
+	logExit  "$rc"
 
 	return $rc
 }
@@ -3147,7 +3152,7 @@ function rsyncBackup() { # partition number (for partition based backup)
 
 	local verbose partition target source fakecmd faketarget excludeRoot cmd cmdParms
 
-	logEntry  "rsyncBackup"
+	logEntry
 
 	(( $PROGRESS )) && VERBOSE=0
 
@@ -3229,13 +3234,13 @@ function rsyncBackup() { # partition number (for partition based backup)
 		rc=$?
 	fi
 
-	logExit  "rsyncBackup $rc"
+	logExit  "$rc"
 
 }
 
 function restore() {
 
-	logEntry "restore"
+	logEntry
 
 	rc=0
 	local verbose zip
@@ -3512,13 +3517,13 @@ function restore() {
 		umount $MNT_POINT >> "$LOG_FILE"
 	fi
 
-	logExit "restore rc: $rc"
+	logExit "$rc"
 
 }
 
 function backup() {
 
-	logEntry "backup"
+	logEntry
 
 	logger -t $MYSELF "Starting backup..."
 
@@ -3663,13 +3668,14 @@ function backup() {
 	startServices
 
 	logger -t $MYSELF "Backup finished"
-	logExit "backup"
+	logExit
 
 }
 
 function mountSDPartitions() { # sourcePath
+
 	local partitition partitionName
-	logEntry "mountSDPartitions: $1"
+	logEntry
 
 	if (( ! $FAKE )); then
 		logItem "BEFORE: mount $(mount)"
@@ -3682,12 +3688,13 @@ function mountSDPartitions() { # sourcePath
 		done
 		logItem "AFTER: mount $(mount)"
 	fi
-	logExit "mountSDPartitions"
+	logExit
 }
 
 function umountSDPartitions() { # sourcePath
+
 	local partitition partitionName
-	logEntry "umountSDPartitions"
+	logEntry
 	if (( ! $FAKE )); then
 		logItem "BEFORE: mount $(mount)"
 		for partition in "${PARTITIONS_TO_BACKUP[@]}"; do
@@ -3703,12 +3710,12 @@ function umountSDPartitions() { # sourcePath
 		done
 		logItem "AFTER: mount $(mount)"
 	fi
-	logExit "umountSDPartitions"
+	logExit
 }
 
 function backupPartitions() {
 
-	logEntry "backupPartitions"
+	logEntry
 
 	local partition
 
@@ -3765,17 +3772,17 @@ function backupPartitions() {
 		umountSDPartitions "$TEMPORARY_MOUNTPOINT_ROOT"
 	fi
 
-	logExit "backupPartitions $rc"
+	logExit "$rc"
 
 }
 
 function doit() {
 
-	logEntry "doit"
+	logEntry
 
 	local msg
 	logItem "Startingdirectory: $(pwd)"
-	logItem "fdisk -l$NL$(fdisk -l 2>/dev/null)"
+	logItem "fdisk -l$NL$(fdisk -l | grep -v "^$" 2>/dev/null)"
 	logItem "mount$NL$(mount 2>/dev/null)"
 
 	if (( $RESTORE )); then
@@ -3790,13 +3797,13 @@ function doit() {
 
 	logItem "Enddirectory: $(pwd)"
 
-	logExit "doit"
+	logExit
 
 }
 
 function collectPartitions() {
 
-	logEntry "collectPartitions"
+	logEntry
 
 # raspbian:
 # /dev/mmcblk0p1 : start=     8192, size=   114688, Id= c
@@ -3875,7 +3882,7 @@ function collectPartitions() {
 		exitError $RC_
 	fi
 
-	logExit "collectPartitions"
+	logExit
 
 }
 
@@ -3883,7 +3890,7 @@ function checksForPartitionBasedBackup() {
 
 	local partition
 
-	logEntry "checksForPartitionBasedBackup"
+	logEntry
 
 	collectPartitions
 
@@ -3928,13 +3935,13 @@ function checksForPartitionBasedBackup() {
 		exitError $RC_PARAMETER_ERROR
 	fi
 
-	logExit "checksForPartitionBasedBackup"
+	logExit
 
 }
 
 function commonChecks() {
 
-	logEntry "commonChecks"
+	logEntry
 
 	if [[ -n "$EMAIL" ]]; then
 		if [[ ! $EMAIL_PROGRAM =~ $SUPPORTED_EMAIL_PROGRAM_REGEX ]]; then
@@ -3953,13 +3960,13 @@ function commonChecks() {
 		fi
 	fi
 
-	logExit "commonChecks"
+	logExit
 
 }
 
 function getRootPartition() {
 
-	logEntry "getRootPartition"
+	logEntry
 #	cat /proc/cmdline
 #	dma.dmachans=0x7f35 bcm2708_fb.fbwidth=656 bcm2708_fb.fbheight=416 bcm2708.boardrev=0xf bcm2708.serial=0x3f3c9490 smsc95xx.macaddr=B8:27:EB:3C:94:90 bcm2708_fb.fbswap=1 sdhci-bcm2708.emmc_clock_freq=250000000 vc_mem.mem_base=0x1fa00000 vc_mem.mem_size=0x20000000  dwc_otg.lpm_enable=0 console=ttyAMA0,115200 kgdboc=ttyAMA0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 elevator=deadline rootwait
 
@@ -3971,7 +3978,7 @@ function getRootPartition() {
 	else
 		assertionFailed $LINENO "Unable to find root mountpoint in /proc/cmdline"
 	fi
-	logExit "getRootPartition: $ROOT_PARTITION"
+	logExit "$ROOT_PARTITION"
 
 }
 
@@ -3983,7 +3990,7 @@ function getRootPartition() {
 
 function deviceInfo() { # device, e.g. /dev/mmcblk1p2 or /dev/sda3, returns 0:device (mmcblk0), 1: partition number
 
-	logEntry "deviceInfo: $1"
+	logEntry "$1"
 	local r=""
 
 	if [[ $1 =~ ^/dev/([^0-9]+)([0-9]+)$ || $1 =~ ^/dev/([^0-9]+[0-9]+)p([0-9]+)$ ]]; then
@@ -3991,12 +3998,12 @@ function deviceInfo() { # device, e.g. /dev/mmcblk1p2 or /dev/sda3, returns 0:de
 	fi
 
 	echo "$r"
-	logExit "deviceInfo: $r"
+	logExit "$r"
 }
 
 function inspect4Backup() {
 
-	logEntry "inspect4Backup"
+	logEntry
 
 	logItem "ls /dev/mmcblk*:${NL}$(ls -1 /dev/mmcblk* 2>/dev/null)"
 	logItem "ls /dev/sd*:${NL}$(ls -1 /dev/sd* 2>/dev/null)"
@@ -4091,12 +4098,12 @@ function inspect4Backup() {
 	logItem "BOOT_PARTITION_PREFIX: $BOOT_PARTITION_PREFIX"
 	BACKUP_BOOT_PARTITION_PREFIX="$BOOT_PARTITION_PREFIX"
 
-	logExit "inspect4Backup"
+	logExit
 }
 
 function inspect4Restore() {
 
-	logEntry "inspect4Restore"
+	logEntry
 
 	if [[ $BACKUPTYPE != $BACKUPTYPE_DD && $BACKUPTYPE != $BACKUPTYPE_DDZ ]]; then
 		SF_FILE=$(ls -1 $RESTOREFILE/*.sfdisk)
@@ -4170,13 +4177,13 @@ function inspect4Restore() {
 		logItem "BACKUP_BOOT_PARTITION_PREFIX: $BACKUP_BOOT_PARTITION_PREFIX"
 	fi
 
-	logExit "inspect4Restore"
+	logExit
 
 }
 
 function reportNews() {
 
-	logEntry "reportNews"
+	logEntry
 
 	if (( $NOTIFY_UPDATE )); then
 
@@ -4193,13 +4200,13 @@ function reportNews() {
 		fi
 	fi
 
-	logExit "reportNews"
+	logExit
 
 }
 
 function doitBackup() {
 
-	logEntry "doitBackup $PARTITIONBASED_BACKUP"
+	logEntry "$PARTITIONBASED_BACKUP"
 
 	getRootPartition
 	inspect4Backup
@@ -4351,13 +4358,13 @@ function doitBackup() {
 
 	backup
 
-	logExit "doitBackup"
+	logExit
 
 }
 
 function getPartitionTable() { # device
 
-	logEntry "getPartitionTable $1"
+	logEntry "$1"
 	logItem "$(IFS='' parted $1 unit MB p 2>>$LOG_FILE)"
 	local table="$(IFS='' parted $1 unit MB p 2>>$LOG_FILE | sed -r '/^($|[MSDP])/d')"
 
@@ -4366,12 +4373,12 @@ function getPartitionTable() { # device
 	fi
 	echo "$table"
 
-	logExit "getPartitionTable"
+	logExit
 }
 
 function checkAndSetBootPartitionFiles() { # directory extension
 
-	logEntry "checkAndSetBootPartitionFiles"
+	logEntry
 
 	local prefix="$1/$2"
 
@@ -4402,7 +4409,7 @@ function checkAndSetBootPartitionFiles() { # directory extension
 		fi
 	fi
 
-	logExit "checkAndSetBootPartitionFiles $errorCnt"
+	logExit "$errorCnt"
 
 	return $errorCnt
 
@@ -4410,7 +4417,7 @@ function checkAndSetBootPartitionFiles() { # directory extension
 
 function findNonpartitionBackupBootAndRootpartitionFiles() {
 
-	logEntry "findNonpartitionBackupBootAndRootpartitionFiles"
+	logEntry
 
 #	search precedence for root files
 #	1) if directory search corresponding file in directory
@@ -4447,7 +4454,7 @@ function findNonpartitionBackupBootAndRootpartitionFiles() {
 
 		if [[ $errorCnt == 0 ]]; then
 			writeToConsole $MSG_LEVEL_DETAILED $MSG_BOOTPATITIONFILES_FOUND "${bootpartitionDirectory[$i]}" "${bootpartitionExtension[$i]}"
-			logExit "findNonpartitionBackupBootpartitionFiles"
+			logExit
 			return
 		fi
 	done
@@ -4455,14 +4462,14 @@ function findNonpartitionBackupBootAndRootpartitionFiles() {
 	for (( i=0; i<${#bootpartitionDirectory[@]}; i++ )); do
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_BOOTPATITIONFILES_NOT_FOUND "${bootpartitionDirectory[$i]}" "${bootpartitionExtension[$i]}"
 	done
-	logExit "findNonpartitionBackupBootAndRootpartitionFiles"
+	logExit
 	exitError $RC_MISC_ERROR
 
 }
 
 function restoreNonPartitionBasedBackup() {
 
-	logEntry "restoreNonPartitionBasedBackup"
+	logEntry
 
 	if [[ -z $(fdisk -l $RESTORE_DEVICE 2>/dev/null) ]]; then
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_NO_RESTOREDEVICE_FOUND $RESTORE_DEVICE
@@ -4530,13 +4537,13 @@ function restoreNonPartitionBasedBackup() {
 
 	restore
 
-	logExit "restoreNonPartitionBasedBackup. rc: $rc"
+	logExit "$rc"
 
 }
 
 function restorePartitionBasedBackup() {
 
-	logEntry "restorePartitionBasedBackup"
+	logEntry
 
 	local partition sourceSize targetSize
 
@@ -4661,7 +4668,7 @@ function restorePartitionBasedBackup() {
 	logItem "fdisk of $RESTORE_DEVICE"
 	logItem $(fdisk -l $RESTORE_DEVICE)
 
-	logExit "restorePartitionBasedBackup"
+	logExit
 
 }
 
@@ -4674,7 +4681,7 @@ function restorePartitionBasedBackup() {
 
 function getBackupPartitionLabel() { # partition
 
-	logEntry "getBackupPartitionLabel $1"
+	logEntry "$1"
 
 	local partition=$1
 	local blkid matches label
@@ -4692,7 +4699,7 @@ function getBackupPartitionLabel() { # partition
 
 	echo "$label"
 
-	logExit "getBackupPartitionLabel $label"
+	logExit "$label"
 
 }
 
@@ -4710,7 +4717,7 @@ function getBackupPartitionLabel() { # partition
 
 function extractDataFromBackupPartedFile() { # partition fieldnumber
 
-	logEntry "extractDataFromBackupPartedFile $1 $2"
+	logEntry "$1 $2"
 
 	local partitionNo=$(sed -E "s%${BACKUP_BOOT_PARTITION_PREFIX}%%" <<< "$1")
 	logItem "PartitionNo: $partitionNo"
@@ -4724,36 +4731,36 @@ function extractDataFromBackupPartedFile() { # partition fieldnumber
 
 	echo "$element"
 
-	logExit "extractDataFromBackupPartedFile $element"
+	logExit "$element"
 }
 
 function getBackupPartitionFilesystemSize() { # partition
 
-	logEntry "getBackupPartitionFilesystemSize $1"
+	logEntry "$1"
 
 	local size
 	size=$(extractDataFromBackupPartedFile $1 "4")
 	echo "$size"
 
-	logExit "getBackupPartitionFilesystemSize $size"
+	logExit "$size"
 
 }
 
 function getBackupPartitionFilesystem() { # partition
 
-	logEntry "getBackupPartitionFilesystem $1"
+	logEntry "$1"
 
 	local fileSystem
 	fileSystem=$(extractDataFromBackupPartedFile $1 "5")
 	echo "$fileSystem"
 
-	logExit "getBackupPartitionFilesystem $fileSystem"
+	logExit "$fileSystem"
 
 }
 
 function getPartitionBootFilesystem() { # partition_no
 
-	logEntry "getPartitionBootFilesystem $1"
+	logEntry "$1"
 
 	local partitionNo=$1
 
@@ -4768,13 +4775,13 @@ function getPartitionBootFilesystem() { # partition_no
 
 	echo "$format"
 
-	logExit "getPartitionBootFilesystem $format"
+	logExit "$format"
 
 }
 
 function lastUsedPartitionByte() { # device
 
-	logEntry "lastUsedPartitionByte $1"
+	logEntry "$1"
 
 	local partitionregex="/dev/.*[p]?([0-9]+).*start=[^0-9]*([0-9]+).*size=[^0-9]*([0-9]+).*(Id|type)=[^0-9a-z]*([0-9a-z]+)"
 	local lastUsedPartitionByte=0
@@ -4806,13 +4813,13 @@ function lastUsedPartitionByte() { # device
 
 	echo "$lastUsedPartitionByte"
 
-	logExit "lastUsedPartitionByte $lastUsedPartitionByte"
+	logExit "$lastUsedPartitionByte"
 
 }
 
 function restorePartitionBasedPartition() { # restorefile
 
-	logEntry "restorePartitionBasedPartition $1"
+	logEntry "$1"
 
 	rc=0
 	local verbose zip partitionFormat partitionLabel cmd
@@ -5014,13 +5021,13 @@ function restorePartitionBasedPartition() { # restorefile
 		assertionFailed $LINENO "This error should not occur"
 	fi
 
-	logExit "restorePartitionBasedPartition"
+	logExit
 
 }
 
 function doitRestore() {
 
-	logEntry "doitRestore"
+	logEntry
 
 	commonChecks
 
@@ -5178,7 +5185,7 @@ function doitRestore() {
 		restorePartitionBasedBackup
 	fi
 
-	logExit "doitRestore (rc=$rc)"
+	logExit
 
 }
 
@@ -5200,7 +5207,7 @@ function calculateMonthDiff() { # fromDate toDate
 
 function updateRestoreReminder() {
 
-	logEntry "updateRestoreReminder"
+	logEntry
 
 	local reminder_file="$VAR_LIB_DIRECTORY/$RESTORE_REMINDER_FILE"
 
@@ -5237,7 +5244,7 @@ function updateRestoreReminder() {
 		fi
 	fi
 
-	logExit "updateRestoreReminder"
+	logExit
 
 }
 
@@ -5257,7 +5264,7 @@ function remount() { # device mountpoint
 }
 
 function synchronizeCmdlineAndfstab() {
-	logEntry "syncronizeCmdlineAndfstab"
+	logEntry
 
 	local CMDLINE FSTAB newPartUUID oldPartUUID root_partition BOOT_MP ROOT_MP
 
@@ -5325,12 +5332,12 @@ function synchronizeCmdlineAndfstab() {
 	umount $BOOT_MP
 	umount $ROOT_MP
 
-	logExit "syncronizeCmdlineAndfstab"
+	logExit
 }
 
 function check4RequiredCommands() {
 
-	logEntry "check4RequiredCommands"
+	logEntry
 
 	local missing_commands missing_packages
 
@@ -5351,7 +5358,7 @@ function check4RequiredCommands() {
 		exitError $RC_MISSING_COMMANDS
 	fi
 
-	logExit "check4RequiredCommands"
+	logExit
 
 }
 
@@ -6035,19 +6042,19 @@ fi
 	writeToConsole $MSG_LEVEL_DETAILED $MSG_USING_LOGFILE "$LOG_FILE"
 
 	if (( $ETC_CONFIG_FILE_INCLUDED )); then
-		logItem "/etc/config$NL$(egrep -v '^\s*$|^#' $ETC_CONFIG_FILE)"
+		logItem "Reading config ${ETC_CONFIG_FILE}$NL$(egrep -v '^\s*$|^#' $ETC_CONFIG_FILE)"
 		writeToConsole $MSG_LEVEL_DETAILED $MSG_INCLUDED_CONFIG "$ETC_CONFIG_FILE"
 	fi
 	if (( $HOME_CONFIG_FILE_INCLUDED )); then
-		logItem "/home/config$NL$(egrep -v '^\s*$|^#' $HOME_CONFIG_FILE)"
+		logItem "Reading config ${HOME_CONFIG_FILE}$NL$(egrep -v '^\s*$|^#' $HOME_CONFIG_FILE)"
 		writeToConsole $MSG_LEVEL_DETAILED $MSG_INCLUDED_CONFIG "$HOME_CONFIG_FILE"
 	fi
 	if (( $CURRENTDIR_CONFIG_FILE_INCLUDED )); then
-		logItem "./config$NL$(egrep -v '^\s*$|^#' $CURRENTDIR_CONFIG_FILE)"
+		logItem "REading ${CURRENTDIR_CONFIG_FILE}$NL$(egrep -v '^\s*$|^#' $CURRENTDIR_CONFIG_FILE)"
 		writeToConsole $MSG_LEVEL_DETAILED $MSG_INCLUDED_CONFIG "$CURRENTDIR_CONFIG_FILE"
 	fi
 	if (( $CUSTOM_CONFIG_FILE_INCLUDED )); then
-		logItem "custom config$NL$(egrep -v '^\s*$|^#' $CUSTOM_CONFIG_FILE)"
+		logItem "Reading ${CUSTOM_CONFIG_FILE}$NL$(egrep -v '^\s*$|^#' $CUSTOM_CONFIG_FILE)"
 		writeToConsole $MSG_LEVEL_DETAILED $MSG_INCLUDED_CONFIG "$CUSTOM_CONFIG_FILE"
 	fi
 
