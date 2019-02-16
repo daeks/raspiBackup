@@ -8,7 +8,7 @@
 #
 #######################################################################################################################
 #
-#    Copyright (C) 2013-2018 framp at linux-tips-and-tricks dot de
+#    Copyright (C) 2013-2019 framp at linux-tips-and-tricks dot de
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -58,11 +58,11 @@ MYSELF=${0##*/}
 MYNAME=${MYSELF%.*}
 MYPID=$$
 
-GIT_DATE="$Date: 2019-02-02 20:33:43 +0100$"
+GIT_DATE="$Date: 2019-02-16 19:17:53 +0100$"
 GIT_DATE_ONLY=${GIT_DATE/: /}
 GIT_DATE_ONLY=$(cut -f 2 -d ' ' <<< $GIT_DATE)
 GIT_TIME_ONLY=$(cut -f 3 -d ' ' <<< $GIT_DATE)
-GIT_COMMIT="$Sha1: bc45475$"
+GIT_COMMIT="$Sha1: 8dd3b41$"
 GIT_COMMIT_ONLY=$(cut -f 2 -d ' ' <<< $GIT_COMMIT | sed 's/\$//')
 
 GIT_CODEVERSION="$MYSELF $VERSION, $GIT_DATE_ONLY/$GIT_TIME_ONLY - $GIT_COMMIT_ONLY"
@@ -173,7 +173,9 @@ declare -A Z_TYPE_MAPPING=( [$BACKUPTYPE_DD]=$BACKUPTYPE_DDZ [$BACKUPTYPE_TAR]=$
 readarray -t SORTED < <(for a in "${!FILE_EXTENSION[@]}"; do echo "$a"; done | sort)
 ALLOWED_TYPES=""
 POSSIBLE_TYPES=""
+POSSIBLE_TYPES_ARRAY=()
 for K in "${SORTED[@]}"; do
+	POSSIBLE_TYPES_ARRAY+=("$K")
 	[[ -z $POSSIBLE_TYPES ]] && POSSIBLE_TYPES=$K || POSSIBLE_TYPES="$POSSIBLE_TYPES|$K"
 	lastChar="${K: -1}"
 	if [[ $lastChar == "z" ]]; then         # skip tgz and ddz as allowed types, now handled with -z invocation parameter, still accept old types for backward compatibility
@@ -265,7 +267,7 @@ INTERACTIVE=!$?
 # supported languages
 
 MSG_SUPPORTED_REGEX="EN|DE"
-MSG_FALLBACK="EN"
+MSG_LANG_FALLBACK="EN"
 
 MSG_EN=1      # english	(default)
 MSG_DE=1      # german
@@ -343,7 +345,7 @@ MSG_UNKNOWN_BACKUPTYPE=22
 MSG_EN[$MSG_UNKNOWN_BACKUPTYPE]="RBK0022E: Unknown backuptype %s."
 MSG_DE[$MSG_UNKNOWN_BACKUPTYPE]="RBK0022E: Unbekannter Backtyp %s."
 MSG_KEEPBACKUP_INVALID=23
-MSG_EN[$MSG_KEEPBACKUP_INVALID]="RBK0023E: Invalid parameter %s for -k detected."
+MSG_EN[$MSG_KEEPBACKUP_INVALID]="RBK0023E: Invalid parameter %s for %s detected."
 MSG_DE[$MSG_KEEPBACKUP_INVALID]="RBK0023E: Ungültiger Parameter %s für -k eingegeben."
 MSG_TOOL_ERROR=24
 MSG_EN[$MSG_TOOL_ERROR]="RBK0024E: Backup tool %s received error %s. Errormessages:$NL%s"
@@ -750,9 +752,9 @@ MSG_DE[$MSG_SKIP_STOPPING_SERVICES]="RBK0157W: Keine Services sind zu stoppen."
 MSG_MAIN_BACKUP_PROGRESSING=158
 MSG_EN[$MSG_MAIN_BACKUP_PROGRESSING]="RBK0158I: Creating native %s backup %s."
 MSG_DE[$MSG_MAIN_BACKUP_PROGRESSING]="RBK0158I: %s Backup %s wird erstellt."
-#MSG_NO_BOOTDEVICE_FOUND=158
-#MSG_EN[$MSG_NO_BOOTDEVICE_FOUND]="RBK0158E: Unable to detect boot device."
-#MSG_DE[$MSG_NO_BOOTDEVICE_FOUND]="RBK0158E: Bootgerät kann nicht erkannt werden."
+MSG_BACKUPS_KEPT=159
+MSG_EN[$MSG_BACKUPS_KEPT]="RBK0159I: Keeping %s backups."
+MSG_DE[$MSG_BACKUPS_KEPT]="RBK0159I: %s Backups werden aufbewahrt."
 MSG_TARGETSD_SIZE_TOO_SMALL=160
 MSG_EN[$MSG_TARGETSD_SIZE_TOO_SMALL]="RBK0160E: Target %s with %s is smaller than backup source with %s."
 MSG_DE[$MSG_TARGETSD_SIZE_TOO_SMALL]="RBK0160E: Ziel %s mit %s ist kleiner als die Backupquelle mit %s."
@@ -874,7 +876,7 @@ MSG_MISSING_PACKAGES=194
 MSG_EN[$MSG_MISSING_PACKAGES]="RBK0194E: Missing required packages. Install them with 'sudo apt-get install %s'."
 MSG_DE[$MSG_MISSING_PACKAGES]="RBK0194E: Erforderliche Pakete nicht installiert. Installiere sie mit 'sudo apt-get install %s'"
 MSG_UPDATE_TO_SHA=195
-MSG_EN[$MSG_UPDATE_TO_SHA]="RBK0192I: There is a new minor code change of $MYSELF %s available. Upgrading current code level from %s to %s."
+MSG_EN[$MSG_UPDATE_TO_SHA]="RBK0192I: There is a minor code change of $MYSELF %s available. Upgrading current code level from %s to %s."
 MSG_DE[$MSG_UPDATE_TO_SHA]="RBK0192I: Es ist eine keine Codeänderung von $MYSELF %s verfügbar. Den momentanen Codelevel von %s auf %s upgraden."
 MSG_NO_HARDLINKS_USED=196
 MSG_EN[$MSG_NO_HARDLINKS_USED]="RBK0196W: No hardlinks supported on %s."
@@ -1166,15 +1168,27 @@ function exitError() { # {rc}
 	exit $rc
 }
 
+# write stdout and stderr into log
 function executeCommand() { # command - rc's to accept
+	executeCmd "$1" "&" "$2"
+	return $rc
+}
+
+# gzip writes it's output into stdout thus don't redirect stdout into log, only stderr
+function executeCommandNoStdoutRedirect() { # command - rc's to accept
+	executeCmd "$1" "2" "$2"
+	return $rc
+}
+
+function executeCmd() { # command - redirects - rc's to accept
 	local rc i
-	logItem "Command executed:$NL$1"
-	logItem "Skips: $2"
+	logEntry "Command: $1"
+	logItem "Redirect: $2 - Skips: $3"
 
 	if (( $INTERACTIVE )); then
 		eval "$1"
 	else
-		eval "$1 &>> $LOG_FILE"
+		eval "$1 $2>> $LOG_FILE"
 	fi
 	rc=$?
 	if (( $rc != 0 )); then
@@ -1188,7 +1202,7 @@ function executeCommand() { # command - rc's to accept
 			fi
 		done
 	fi
-	logItem "Result $rc"
+	logExit "$rc"
 	return $rc
 }
 
@@ -1318,11 +1332,11 @@ function logOptions() {
 	logItem "BACKUPTYPE=$BACKUPTYPE"
 	logItem "CHECK_FOR_BAD_BLOCKS=$CHECK_FOR_BAD_BLOCKS"
  	logItem "CONFIG_FILE=$CONFIG_FILE"
- 	logItem "DD_BACKUP_SAVE_USED_PARTITIONS_ONLY=$DEFAULT_DD_BACKUP_SAVE_USED_PARTITIONS_ONLY"
+ 	logItem "DD_BACKUP_SAVE_USED_PARTITIONS_ONLY=$DD_BACKUP_SAVE_USED_PARTITIONS_ONLY"
  	logItem "DD_BLOCKSIZE=$DD_BLOCKSIZE"
  	logItem "DD_PARMS=$DD_PARMS"
-	logItem "DEFAULT_DEPLOYMENT_HOSTS=$DEFAULT_DEPLOYMENT_HOSTS"
-	logItem "DEFAULT_YES_NO_RESTORE_DEVICE=$DEFAULT_YES_NO_RESTORE_DEVICE"
+	logItem "DEPLOYMENT_HOSTS=$DEFAULT_DEPLOYMENT_HOSTS"
+	logItem "YES_NO_RESTORE_DEVICE=$DEFAULT_YES_NO_RESTORE_DEVICE"
 	logItem "EMAIL=$EMAIL"
 	logItem "EMAIL_PARMS=$EMAIL_PARMS"
 	logItem "EXCLUDE_LIST=$EXCLUDE_LIST"
@@ -1330,8 +1344,13 @@ function logOptions() {
 	logItem "FAKE=$FAKE"
 	logItem "HANDLE_DEPRECATED=$HANDLE_DEPRECATED"
 	logItem "KEEPBACKUPS=$KEEPBACKUPS"
+	logItem "KEEPBACKUPS_DD=$KEEPBACKUPS_DD"
+	logItem "KEEPBACKUPS_DDZ=$KEEPBACKUPS_DDZ"
+	logItem "KEEPBACKUPS_TAR=$KEEPBACKUPS_TAR"
+	logItem "KEEPBACKUPS_TGZ=$KEEPBACKUPS_TGZ"
+	logItem "KEEPBACKUPS_RSYNC=$KEEPBACKUPS_RSYNC"
 	logItem "LANGUAGE=$LANGUAGE"
-	logItem "LINK_BOOTPARTITIONFILES=$DEFAULT_LINK_BOOTPARTITIONFILES"
+	logItem "LINK_BOOTPARTITIONFILES=$LINK_BOOTPARTITIONFILES"
 	logItem "LOG_LEVEL=$LOG_LEVEL"
  	logItem "LOG_OUTPUT=$LOG_OUTPUT"
 	logItem "MAIL_ON_ERROR_ONLY=$MAIL_ON_ERROR_ONLY"
@@ -1381,8 +1400,14 @@ function initializeDefaultConfig() {
 
 # path to store the backupfile
 DEFAULT_BACKUPPATH="/backup"
-# how many backups to keep
+# how many backups to keep of all backup types
 DEFAULT_KEEPBACKUPS=3
+# how many backups to keep of the specific backup type. If zero DEFAULT_KEEPBACKUPS is used
+DEFAULT_KEEPBACKUPS_DD=0
+DEFAULT_KEEPBACKUPS_DDZ=0
+DEFAULT_KEEPBACKUPS_TAR=0
+DEFAULT_KEEPBACKUPS_TGZ=0
+DEFAULT_KEEPBACKUPS_RSYNC=0
 # type of backup: dd, tar or rsync
 DEFAULT_BACKUPTYPE="dd"
 # zip tar or dd backup (0 = false, 1 = true)
@@ -1402,7 +1427,7 @@ DEFAULT_EMAIL_PARMS=""
 # log level  (0 = none, 1 = debug)
 DEFAULT_LOG_LEVEL=2
 # log output ( 0 = syslog, 1 = /var/log, 2 = backuppath, 3 = ./raspiBackup.log, <somefilename>)
-DEFAULT_LOG_OUTPUT=1
+DEFAULT_LOG_OUTPUT=2
 # msg level (0 = minimal, 1 = detailed)
 DEFAULT_MSG_LEVEL=0
 # mailprogram
@@ -1473,65 +1498,13 @@ DEFAULT_RESTORE_REMINDER_REPEAT=3
 
 }
 
-function logOptions() {
-
-	logEntry
-
-	logItem "$(uname -a)"
-
-	logItem "Options: $INVOCATIONPARMS"
-	logItem "APPEND_LOG=$APPEND_LOG"
-	logItem "APPEND_LOG_OPTION=$APPEND_LOG_OPTION"
-	logItem "BACKUPPATH=$BACKUPPATH"
-	logItem "BACKUPTYPE=$BACKUPTYPE"
-	logItem "CHECK_FOR_BAD_BLOCKS=$CHECK_FOR_BAD_BLOCKS"
- 	logItem "CONFIG_FILE=$CONFIG_FILE"
- 	logItem "DD_BACKUP_SAVE_USED_PARTITIONS_ONLY=$DD_BACKUP_SAVE_USED_PARTITIONS_ONLY"
- 	logItem "DD_BLOCKSIZE=$DD_BLOCKSIZE"
- 	logItem "DD_PARMS=$DD_PARMS"
-	logItem "DEFAULT_DEPLOYMENT_HOSTS=$DEFAULT_DEPLOYMENT_HOSTS"
-	logItem "DEFAULT_YES_NO_RESTORE_DEVICE=$DEFAULT_YES_NO_RESTORE_DEVICE"
-	logItem "EMAIL=$EMAIL"
-	logItem "EMAIL_PARMS=$EMAIL_PARMS"
-	logItem "EXCLUDE_LIST=$EXCLUDE_LIST"
-	logItem "EXTENSIONS=$EXTENSIONS"
-	logItem "FAKE=$FAKE"
-	logItem "HANDLE_DEPRECATED=$HANDLE_DEPRECATED"
-	logItem "KEEPBACKUPS=$KEEPBACKUPS"
-	logItem "LANGUAGE=$LANGUAGE"
-	logItem "LINK_BOOTPARTITIONFILES=$DEFAULT_LINK_BOOTPARTITIONFILES"
-	logItem "LOG_LEVEL=$LOG_LEVEL"
- 	logItem "LOG_OUTPUT=$LOG_OUTPUT"
-	logItem "MAIL_ON_ERROR_ONLY=$MAIL_ON_ERROR_ONLY"
-	logItem "MAIL_PROGRAM=$EMAIL_PROGRAM"
-	logItem "MSG_LEVEL=$MSG_LEVEL"
-	logItem "NOTIFY_UPDATE=$NOTIFY_UPDATE"
-	logItem "PARTITIONBASED_BACKUP=$PARTITIONBASED_BACKUP"
-	logItem "PARTITIONS_TO_BACKUP=$PARTITIONS_TO_BACKUP"
-	logItem "RESIZE_ROOTFS=$RESIZE_ROOTFS"
-	logItem "RESTORE_DEVICE=$RESTORE_DEVICE"
-	logItem "RESTORE_REMINDER_INTERVAL=$RESTORE_REMINDER_INTERVAL"
-	logItem "RESTORE_REMINDER_REPEAT=$RESTORE_REMINDER_REPEAT"
-	logItem "ROOT_PARTITION=$ROOT_PARTITION"
-	logItem "RSYNC_BACKUP_ADDITIONAL_OPTIONS=$RSYNC_BACKUP_ADDITIONAL_OPTIONS"
-	logItem "RSYNC_BACKUP_OPTIONS=$RSYNC_BACKUP_OPTIONS"
-	logItem "RSYNC_IGNORE_ERRORS=$RSYNC_IGNORE_ERRORS"
-	logItem "SENDER_EMAIL=$SENDER_EMAIL"
- 	logItem "SKIPLOCALCHECK=$SKIPLOCALCHECK"
-	logItem "STARTSERVICES=$STARTSERVICES"
-	logItem "STOPSERVICES=$STOPSERVICES"
-	logItem "SYSTEMSTATUS=$SYSTEMSTATUS"
-	logItem "TAR_BACKUP_ADDITIONAL_OPTIONS=$TAR_BACKUP_ADDITIONAL_OPTIONS"
-	logItem "TAR_BACKUP_OPTIONS=$TAR_BACKUP_OPTIONS"
-	logItem "TAR_BOOT_PARTITION_ENABLED=$TAR_BOOT_PARTITION_ENABLED"
-	logItem "TAR_IGNORE_ERRORS=$TAR_IGNORE_ERRORS"
-	logItem "TAR_RESTORE_ADDITIONAL_OPTIONS=$TAR_RESTORE_ADDITIONAL_OPTIONS"
-	logItem "TIMESTAMPS=$TIMESTAMPS"
-	logItem "USE_HARDLINKS=$USE_HARDLINKS"
-	logItem "VERBOSE=$VERBOSE"
-	logItem "ZIP_BACKUP=$ZIP_BACKUP"
-	logExit
-}
+LOG_MAIL_FILE="/tmp/${MYNAME}.maillog"
+LOG_TOOL_FILE="/tmp/${MYNAME}_$$.log"
+#logItem "Removing maillog file ${LOG_MAIL_FILE}"
+rm -f "$LOG_MAIL_FILE" &>/dev/null
+LOG_FILE="$CURRENT_DIR/${MYNAME}.log"
+#logItem "Removing log file ${LOG_FILE}"
+rm -f "$LOG_FILE" &>/dev/null
 
 initializeDefaultConfig
 
@@ -2577,7 +2550,7 @@ function extractVersionFromFile() { # fileName
 	echo $(grep "^VERSION=" "$1" | cut -f 2 -d = | sed  -e "s/\"//g" -e "s/#.*//")
 }
 
-# GIT_COMMIT="$Sha1: bc45475$"
+# GIT_COMMIT="$Sha1: 8dd3b41$"
 function extractSHAFromFile() { # fileName
 	echo $(grep "^GIT_COMMIT=" "$1" | cut -f 2 -d ' ' | sed  -e "s/[\"\$]//g")
 }
@@ -2770,7 +2743,7 @@ function checkAndCorrectImportantParameters() {
 
 		if [[ ! $LANGUAGE =~ $MSG_SUPPORTED_REGEX ]]; then
 			invalidLanguage="$LANGUAGE"
-			LANGUAGE=$MSG_FALLBACK
+			LANGUAGE=$MSG_LANG_FALLBACK
 		fi
 
 		[[ -n $invalidOutput ]] && writeToConsole $MSG_LEVEL_MINIMAL $MSG_INVALID_LOG_OUTPUT "$invalidOutput" "${LOG_OUTPUTs[$LOG_OUTPUT]}"
@@ -3067,7 +3040,11 @@ function ddBackup() {
 		if (( $FAKE_BACKUPS )); then
 			executeCommand "$fakecmd"
 		elif (( ! $FAKE)); then
-			executeCommand "$cmd"
+			if [[ $BACKUPTYPE == $BACKUPTYPE_DDZ ]]; then
+				executeCommandNoStdoutRedirect "$cmd"
+			else
+				executeCommand "$cmd"
+			fi
 			rc=$?
 		else
 			rc=0
@@ -3618,10 +3595,19 @@ function backup() {
 			assertionFailed $LINENO "Unexpected backup path $BACKUPPATH"
 		fi
 
+		local bt="${BACKUPTYPE^^}"
+		local v="KEEPBACKUPS_${bt}"
+		local keepOverwrite="${!v}"
+
+		local keepBackups=$KEEPBACKUPS
+		(( $keepOverwrite > 0 )) && keepBackups=$keepOverwrite
+
+		writeToConsole $MSG_LEVEL_DETAILED $MSG_BACKUPS_KEPT "$keepBackups"
+
 		if (( ! $FAKE )); then
 
 			logItem "pre - ls$NL$(ls -d $BACKUPPATH/* 2>/dev/null)"
-			pushd "$BACKUPPATH" 1>/dev/null; ls -d *-$BACKUPTYPE-* 2>/dev/null| grep -v ".log$" | head -n -$KEEPBACKUPS | xargs -I {} rm -rf "{}" 2>>"$LOG_FILE"; popd > /dev/null
+			pushd "$BACKUPPATH" 1>/dev/null; ls -d *-$BACKUPTYPE-* 2>/dev/null| grep -v ".log$" | head -n -$keepBackups | xargs -I {} rm -rf "{}" 2>>"$LOG_FILE"; popd > /dev/null
 
 			local regex="\-([0-9]{8}\-[0-9]{6})\.(img|mbr|sfdisk|log)$"
 			local regexDD="\-dd\-backup\-([0-9]{8}\-[0-9]{6})\.img$"
@@ -4250,11 +4236,25 @@ function doitBackup() {
 		exitError $RC_MISC_ERROR
 	fi
 
-	if [[ ! $KEEPBACKUPS =~ ^[0-9]+$ || $KEEPBACKUPS -lt 1 || $KEEPBACKUPS -gt 365 ]]; then
-		writeToConsole $MSG_LEVEL_MINIMAL $MSG_KEEPBACKUP_INVALID $KEEPBACKUPS
-		mentionHelp
-		exitError $RC_PARAMETER_ERROR
-	fi
+	if [[ ! "$KEEPBACKUPS" =~ ^[0-9]+$ || $KEEPBACKUPS -lt 1 || $KEEPBACKUPS -gt 365 ]]; then
+			writeToConsole $MSG_LEVEL_MINIMAL $MSG_KEEPBACKUP_INVALID "$KEEPBACKUPS" "-k"
+			mentionHelp
+			exitError $RC_PARAMETER_ERROR
+		fi
+
+	local t
+	local keepBackups
+	for t in "${POSSIBLE_TYPES_ARRAY[@]}"; do
+		local bt="${t^^}"
+		local v="KEEPBACKUPS_${bt}"
+		local keepOverwrite="${!v}"
+
+		if [[ ! $keepOverwrite =~ ^[0-9]+$ || $keepOverwrite -lt 0 || $keepOverwrite -gt 365 ]]; then
+			writeToConsole $MSG_LEVEL_MINIMAL $MSG_KEEPBACKUP_INVALID "$keepOverwrite" "$v"
+			mentionHelp
+			exitError $RC_PARAMETER_ERROR
+		fi
+	done
 
 	if (( $ZIP_BACKUP_TYPE_INVALID )); then
 		writeToConsole $MSG_LEVEL_MINIMAL $MSG_UNKNOWN_BACKUPTYPE_FOR_ZIP $BACKUPTYPE
@@ -5536,18 +5536,72 @@ for (( i=1; i<=$#; i++ )); do
 	INVOCATIONPARMS="$INVOCATIONPARMS $p"
 done
 
-# setup defaults for parameters
-# 0 is false, true otherwise
-
 readConfigParameters		# overwrite defaults with settings in config files
 
+APPEND_LOG=$DEFAULT_APPEND_LOG
+APPEND_LOG_OPTION="$DEFAULT_APPEND_LOG_OPTION"
+BACKUPPATH="$DEFAULT_BACKUPPATH"
+BACKUPTYPE=$DEFAULT_BACKUPTYPE
+CHECK_FOR_BAD_BLOCKS=$DEFAULT_CHECK_FOR_BAD_BLOCKS
+CONFIG_FILE="$DEFAULT_CONFIG_FILE"
+DD_BACKUP_SAVE_USED_PARTITIONS_ONLY=$DEFAULT_DD_BACKUP_SAVE_USED_PARTITIONS_ONLY
+DD_BLOCKSIZE="$DEFAULT_DD_BLOCKSIZE"
+DD_PARMS="$DEFAULT_DD_PARMS"
+DEPLOYMENT_HOSTS="$DEFAULT_DEPLOYMENT_HOSTS"
+EMAIL="$DEFAULT_EMAIL"
+EMAIL_PARMS="$DEFAULT_EMAIL_PARMS"
+MAIL_PROGRAM="$DEFAULT_MAIL_PROGRAM"
+SENDER_EMAIL="$DEFAULT_SENDER_EMAIL"
+EXCLUDE_LIST="$DEFAULT_EXCLUDE_LIST"
+EXTENSIONS="$DEFAULT_EXTENSIONS"
+HANDLE_DEPRECATED=$DEFAULT_HANDLE_DEPRECATED
+KEEPBACKUPS=$DEFAULT_KEEPBACKUPS
+KEEPBACKUPS_DD=$DEFAULT_KEEPBACKUPS_DD
+KEEPBACKUPS_DDZ=$DEFAULT_KEEPBACKUPS_DDZ
+KEEPBACKUPS_TAR=$DEFAULT_KEEPBACKUPS_TAR
+KEEPBACKUPS_TGZ=$DEFAULT_KEEPBACKUPS_TGZ
+KEEPBACKUPS_RSYNC=$DEFAULT_KEEPBACKUPS_RSYNC
+LINK_BOOTPARTITIONFILES=$DEFAULT_LINK_BOOTPARTITIONFILES
+LOG_LEVEL=$DEFAULT_LOG_LEVEL
+LOG_OUTPUT="$DEFAULT_LOG_OUTPUT"
+MAIL_ON_ERROR_ONLY=$DEFAULT_MAIL_ON_ERROR_ONLY
+MAIL_PROGRAM="$DEFAULT_EMAIL_PROGRAM"
+MSG_LEVEL=$DEFAULT_MSG_LEVEL
+NOTIFY_UPDATE=$DEFAULT_NOTIFY_UPDATE
+PARTITIONBASED_BACKUP=$DEFAULT_PARTITIONBASED_BACKUP
+PARTITIONS_TO_BACKUP="$DEFAULT_PARTITIONS_TO_BACKUP"
+RESIZE_ROOTFS=$DEFAULT_RESIZE_ROOTFS
+RESTORE_DEVICE=$DEFAULT_RESTORE_DEVICE
+RESTORE_REMINDER_INTERVAL=$DEFAULT_RESTORE_REMINDER_INTERVAL
+RESTORE_REMINDER_REPEAT=$DEFAULT_RESTORE_REMINDER_REPEAT
+RSYNC_BACKUP_ADDITIONAL_OPTIONS="$DEFAULT_RSYNC_BACKUP_ADDITIONAL_OPTIONS"
+RSYNC_BACKUP_OPTIONS="$DEFAULT_RSYNC_BACKUP_OPTIONS"
+SENDER_EMAIL="$DEFAULT_SENDER_EMAIL"
+SKIPLOCALCHECK=$DEFAULT_SKIPLOCALCHECK
+STARTSERVICES="$DEFAULT_STARTSERVICES"
+STOPSERVICES="$DEFAULT_STOPSERVICES"
+SYSTEMSTATUS=$DEFAULT_SYSTEMSTATUS
+TAR_BACKUP_ADDITIONAL_OPTIONS="$DEFAULT_TAR_BACKUP_ADDITIONAL_OPTIONS"
+TAR_BACKUP_OPTIONS="$DEFAULT_TAR_BACKUP_OPTIONS"
+TAR_BOOT_PARTITION_ENABLED=$DEFAULT_TAR_BOOT_PARTITION_ENABLED
+TAR_RESTORE_ADDITIONAL_OPTIONS="$DEFAULT_TAR_RESTORE_ADDITIONAL_OPTIONS"
+TIMESTAMPS=$DEFAULT_TIMESTAMPS
+USE_HARDLINKS=$DEFAULT_USE_HARDLINKS
+USE_UUID=$DEFAULT_USE_UUID
+VERBOSE=$DEFAULT_VERBOSE
+YES_NO_RESTORE_DEVICE=$DEFAULT_YES_NO_RESTORE_DEVICE
+ZIP_BACKUP=$DEFAULT_ZIP_BACKUP
+
 if [[ -z $DEFAULT_LANGUAGE ]]; then
-	LANG_EXT=${LANG^^*}
-	DEFAULT_LANGUAGE=${LANG_EXT:0:2}
+	LANG_EXT="${LANG^^*}"
+	DEFAULT_LANGUAGE="${LANG_EXT:0:2}"
 	if [[ ! $DEFAULT_LANGUAGE =~ $MSG_SUPPORTED_REGEX ]]; then
-		DEFAULT_LANGUAGE=$MSG_FALLBACK
+		DEFAULT_LANGUAGE="$MSG_LANG_FALLBACK"
 	fi
+else
+	DEFAULT_LANGUAGE="${DEFAULT_LANGUAGE^^*}"
 fi
+
 LANGUAGE=$DEFAULT_LANGUAGE
 
 # misc other vars
@@ -5709,6 +5763,36 @@ while (( "$#" )); do
 	  o=$(checkOptionParameter "$1" "$2")
 	  (( $? )) && exitError $RC_PARAMETER_ERROR
 	  KEEPBACKUPS="$o"; shift 2
+	  ;;
+
+	--keep_dd)
+	  o=$(checkOptionParameter "$1" "$2")
+	  (( $? )) && exitError $RC_PARAMETER_ERROR
+	  KEEPBACKUPS_DD="$o"; shift 2
+	  ;;
+
+	--keep_ddz)
+	  o=$(checkOptionParameter "$1" "$2")
+	  (( $? )) && exitError $RC_PARAMETER_ERROR
+	  KEEPBACKUPS_DDZ="$o"; shift 2
+	  ;;
+
+	--keep_tar)
+	  o=$(checkOptionParameter "$1" "$2")
+	  (( $? )) && exitError $RC_PARAMETER_ERROR
+	  KEEPBACKUPS_TAR="$o"; shift 2
+	  ;;
+
+	--keep_tgz)
+	  o=$(checkOptionParameter "$1" "$2")
+	  (( $? )) && exitError $RC_PARAMETER_ERROR
+	  KEEPBACKUPS_TGZ="$o"; shift 2
+	  ;;
+
+	--keep_rsync)
+	  o=$(checkOptionParameter "$1" "$2")
+	  (( $? )) && exitError $RC_PARAMETER_ERROR
+	  KEEPBACKUPS_RSYNC="$o"; shift 2
 	  ;;
 
 	-l)
