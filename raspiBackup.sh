@@ -58,11 +58,11 @@ MYSELF=${0##*/}
 MYNAME=${MYSELF%.*}
 MYPID=$$
 
-GIT_DATE="$Date: 2019-02-16 19:17:53 +0100$"
+GIT_DATE="$Date: 2019-02-17 18:44:17 +0100$"
 GIT_DATE_ONLY=${GIT_DATE/: /}
 GIT_DATE_ONLY=$(cut -f 2 -d ' ' <<< $GIT_DATE)
 GIT_TIME_ONLY=$(cut -f 3 -d ' ' <<< $GIT_DATE)
-GIT_COMMIT="$Sha1: 8dd3b41$"
+GIT_COMMIT="$Sha1: 501084a$"
 GIT_COMMIT_ONLY=$(cut -f 2 -d ' ' <<< $GIT_COMMIT | sed 's/\$//')
 
 GIT_CODEVERSION="$MYSELF $VERSION, $GIT_DATE_ONLY/$GIT_TIME_ONLY - $GIT_COMMIT_ONLY"
@@ -80,6 +80,7 @@ SCRIPT_DIR=$( cd $( dirname ${BASH_SOURCE[0]}); pwd | xargs readlink -f)
 SMILEY_UPDATE_POSSIBLE=";-)"
 SMILEY_BETA_AVAILABLE=":-D"
 SMILEY_RESTORETEST_REQUIRED="8-)"
+SMILEY_VERSION_DEPRECATED=":-("
 
 # URLs and temp filenames used
 
@@ -680,9 +681,9 @@ MSG_DE[$MSG_HARDLINK_DIRECTORY_USED]="RBK0133I: Verzeichnis %s wird für Hardlin
 MSG_UNABLE_TO_USE_HARDLINKS=134
 MSG_EN[$MSG_UNABLE_TO_USE_HARDLINKS]="RBK0134E: Unable to use hardlinks on %s for bootpartition files. RC %s."
 MSG_DE[$MSG_UNABLE_TO_USE_HARDLINKS]="RBK0134E: Hardlinkslinks können nicht auf %s für Bootpartitionsdateien benutzt werden. RC %s."
-MSG_SCRIPT_UPDATE_DEPRECATED=135
-MSG_EN[$MSG_SCRIPT_UPDATE_DEPRECATED]="RBK0135W: Current script version %s has a severe bug and will be updated now."
-MSG_DE[$MSG_SCRIPT_UPDATE_DEPRECATED]="RBK0135W: Aktuelle Scriptversion %s enthält einen gravierenden Fehler und wird jetzt aktualisiert."
+MSG_SCRIPT_IS_DEPRECATED=135
+MSG_EN[$MSG_SCRIPT_IS_DEPRECATED]="RBK0135W: ==> Current script version %s has a severe bug and should be updated immediately <==="
+MSG_DE[$MSG_SCRIPT_IS_DEPRECATED]="RBK0135W: ==> Aktuelle Scriptversion %s enthält einen gravierenden Fehler und sollte sofort aktualisiert werden <==="
 MSG_MISSING_START_OR_STOP=136
 MSG_EN[$MSG_MISSING_START_OR_STOP]="RBK0136E: Missing mandatory option %s."
 MSG_DE[$MSG_MISSING_START_OR_STOP]="RBK0136E: Es fehlt die obligatorische Option %s."
@@ -875,9 +876,9 @@ MSG_DE[$MSG_MISSING_COMMANDS]="RBK0193E: Erforderliche Befehle '%s' nicht vorhan
 MSG_MISSING_PACKAGES=194
 MSG_EN[$MSG_MISSING_PACKAGES]="RBK0194E: Missing required packages. Install them with 'sudo apt-get install %s'."
 MSG_DE[$MSG_MISSING_PACKAGES]="RBK0194E: Erforderliche Pakete nicht installiert. Installiere sie mit 'sudo apt-get install %s'"
-MSG_UPDATE_TO_SHA=195
-MSG_EN[$MSG_UPDATE_TO_SHA]="RBK0192I: There is a minor code change of $MYSELF %s available. Upgrading current code level from %s to %s."
-MSG_DE[$MSG_UPDATE_TO_SHA]="RBK0192I: Es ist eine keine Codeänderung von $MYSELF %s verfügbar. Den momentanen Codelevel von %s auf %s upgraden."
+MSG_FORCE_UPDATE=195
+MSG_EN[$MSG_FORCE_UPDATE]="RBK0192I: Update $MYSELF %s."
+MSG_DE[$MSG_FORCE_UPDATE]="RBK0192I: $MYSELF %s aktualisieren."
 MSG_NO_HARDLINKS_USED=196
 MSG_EN[$MSG_NO_HARDLINKS_USED]="RBK0196W: No hardlinks supported on %s."
 MSG_DE[$MSG_NO_HARDLINKS_USED]="RBK0196W: %s unterstützt keine Hardlinks."
@@ -1048,8 +1049,8 @@ function usage() {
 
 function containsElement () {
   local e
-  for e in "${@:2}"; do [[ "$e" == "$1" ]] && return 1; done
-  return 0
+  for e in "${@:2}"; do [[ "$e" == "$1" ]] && return 0; done
+  return 1
 }
 
 # --- Helper function to extract the message text in German or English and insert message parameters
@@ -1342,7 +1343,7 @@ function logOptions() {
 	logItem "EXCLUDE_LIST=$EXCLUDE_LIST"
 	logItem "EXTENSIONS=$EXTENSIONS"
 	logItem "FAKE=$FAKE"
-	logItem "HANDLE_DEPRECATED=$HANDLE_DEPRECATED"
+	logItem "SKIP_DEPRECATED=$SKIP_DEPRECATED"
 	logItem "KEEPBACKUPS=$KEEPBACKUPS"
 	logItem "KEEPBACKUPS_DD=$KEEPBACKUPS_DD"
 	logItem "KEEPBACKUPS_DDZ=$KEEPBACKUPS_DDZ"
@@ -1366,6 +1367,7 @@ function logOptions() {
 	logItem "RSYNC_BACKUP_OPTIONS=$RSYNC_BACKUP_OPTIONS"
 	logItem "RSYNC_IGNORE_ERRORS=$RSYNC_IGNORE_ERRORS"
 	logItem "SENDER_EMAIL=$SENDER_EMAIL"
+ 	logItem "SKIP_DEPRECATED=$SKIP_DEPRECATED"
  	logItem "SKIPLOCALCHECK=$SKIPLOCALCHECK"
 	logItem "STARTSERVICES=$STARTSERVICES"
 	logItem "STOPSERVICES=$STOPSERVICES"
@@ -1477,8 +1479,8 @@ DEFAULT_TAR_BACKUP_ADDITIONAL_OPTIONS=""
 DEFAULT_TAR_RESTORE_ADDITIONAL_OPTIONS=""
 # Send email only in case of errors. Use with care !
 DEFAULT_MAIL_ON_ERROR_ONLY=0
-# If version is marked as deprecated and buggy then update version
-DEFAULT_HANDLE_DEPRECATED=1
+# Version to suppress deprecated message, separated with spaces
+DEFAULT_SKIP_DEPRECATED=""
 # report uuid
 DEFAULT_USE_UUID=1
 # Check for back blocks when formating restore device (Will take a long time)
@@ -1702,13 +1704,34 @@ function parsePropertiesFile() {
 	properties=$(grep "^BETA=" "$LATEST_TEMP_PROPERTY_FILE" 2>/dev/null)
 	[[ $properties =~ $PROPERTY_REGEX ]] && BETA_PROPERTY=${BASH_REMATCH[1]}
 
-	properties=$(grep "^SHA=" "$LATEST_TEMP_PROPERTY_FILE" 2>/dev/null)
-	[[ $properties =~ $PROPERTY_REGEX ]] && SHA_PROPERTY=${BASH_REMATCH[1]}
-
-	logItem "Properties: v: $VERSION_PROPERTY i: $INCOMPATIBLE_PROPERTY d: $DEPRECATED_PROPERTY s: $SHA_PROPERTY b: $BETA_PROPERTY"
+	logItem "Properties: v: $VERSION_PROPERTY i: $INCOMPATIBLE_PROPERTY d: $DEPRECATED_PROPERTY b: $BETA_PROPERTY"
 
 	logExit
 
+}
+
+function isVersionDeprecated() { # versionNumber
+
+	logEntry
+
+	local rc=1	# no/failure
+	local properties=""
+	local deprecated=""
+
+	local deprecatedVersions=( $DEPRECATED_PROPERTY )
+	if containsElement "$1" "${deprecatedVersions[@]}"; then
+		rc=0
+		logItem "Version $1 is deprecated"
+	fi
+
+	local skip=( $SKIP_DEPRECATED )
+	if containsElement "$1" "${skip[@]}"; then
+		rc=1
+		logItem "Version $1 is deprecated but message is disabled"
+	fi
+
+	logExit "$rc"
+	return $rc
 }
 
 function shouldRenewDownloadPropertiesFile() { # FORCE
@@ -1890,8 +1913,7 @@ function updateScript() {
 
 		if (( ! $FORCE_UPDATE )) ; then
 			local incompatibleVersions=( $INCOMPATIBLE_PROPERTY )
-			containsElement "$newVersion" "${incompatibleVersions[@]}"
-			if (( $? )); then
+			if containsElement "$newVersion" "${incompatibleVersions[@]}"; then
 				writeToConsole $MSG_LEVEL_MINIMAL $MSG_INCOMPATIBLE_UPDATE "$newVersion" "$(getLocalizedMessage $MSG_VERSION_HISTORY_PAGE)"
 				exitNormal
 			fi
@@ -1906,14 +1928,6 @@ function updateScript() {
 			fi
 		fi
 
-		local sha=$(extractSHAFromFile $SCRIPT_DIR/$MYSELF)
-		if [[ $rc != 0 ]] && (( ! $updateNow )) && [[ "$sha" != "$SHA_PROPERTY" ]]; then
-			writeToConsole $MSG_LEVEL_MINIMAL $MSG_UPDATE_TO_SHA "$oldVersion" "$sha" "${SHA_PROPERTY}"
-			if askYesNo; then
-				updateNow=1
-			fi
-		fi
-
 		if [[ $rc == 0 ]] && (( ! $updateNow )); then
 			writeToConsole $MSG_LEVEL_MINIMAL $MSG_UPDATE_TO_VERSION "$oldVersion" "$newVersion"
 			if ! askYesNo; then
@@ -1921,6 +1935,13 @@ function updateScript() {
 				exitNormal
 			fi
 			updateNow=1
+		fi
+
+		if (( !$updateNow )); then
+			writeToConsole $MSG_LEVEL_MINIMAL $MSG_FORCE_UPDATE "$oldVersion"
+			if askYesNo; then
+				updateNow=1
+			fi
 		fi
 
 		if (( $updateNow )); then
@@ -2327,6 +2348,9 @@ function sendEMail() { # content subject
 			if (( $RESTORETEST_REQUIRED )); then
 				smiley="$SMILEY_RESTORETEST_REQUIRED ${smiley}"
 			fi
+			if (( $VERSION_DEPRECATED )); then
+				smiley="$SMILEY_VERSION_DEPRECATED ${smiley}"
+			fi
 		fi
 
 		subject="$smiley$subject"
@@ -2550,7 +2574,6 @@ function extractVersionFromFile() { # fileName
 	echo $(grep "^VERSION=" "$1" | cut -f 2 -d = | sed  -e "s/\"//g" -e "s/#.*//")
 }
 
-# GIT_COMMIT="$Sha1: 8dd3b41$"
 function extractSHAFromFile() { # fileName
 	echo $(grep "^GIT_COMMIT=" "$1" | cut -f 2 -d ' ' | sed  -e "s/[\"\$]//g")
 }
@@ -5578,6 +5601,7 @@ RSYNC_BACKUP_ADDITIONAL_OPTIONS="$DEFAULT_RSYNC_BACKUP_ADDITIONAL_OPTIONS"
 RSYNC_BACKUP_OPTIONS="$DEFAULT_RSYNC_BACKUP_OPTIONS"
 SENDER_EMAIL="$DEFAULT_SENDER_EMAIL"
 SKIPLOCALCHECK=$DEFAULT_SKIPLOCALCHECK
+SKIP_DEPRECATED="$DEFAULT_SKIP_DEPRECATED"
 STARTSERVICES="$DEFAULT_STARTSERVICES"
 STOPSERVICES="$DEFAULT_STOPSERVICES"
 SYSTEMSTATUS=$DEFAULT_SYSTEMSTATUS
@@ -5634,6 +5658,7 @@ SKIP_SFDISK=0
 UPDATE_MYSELF=0
 UPDATE_POSSIBLE=0
 USE_HARDLINKS=1
+VERSION_DEPRECATED=0
 
 PARAMS=""
 
@@ -6017,6 +6042,7 @@ fi
 [[ -z "$RSYNC_BACKUP_OPTIONS" ]] && RSYNC_BACKUP_OPTIONS="$DEFAULT_RSYNC_BACKUP_OPTIONS"
 [[ -z "$SENDER_EMAIL" ]] && SENDER_EMAIL="$DEFAULT_SENDER_EMAIL"
 [[ -z "$SKIPLOCALCHECK" ]] && SKIPLOCALCHECK="$DEFAULT_SKIPLOCALCHECK"
+[[ -z "$SKIP_DEPRECATED" ]] && SKIP_DEPRECATED="$DEFAULT_SKIP_DEPRECATED"
 [[ -z "$STARTSERVICES" ]] && STARTSERVICES="$DEFAULT_STARTSERVICES"
 [[ -z "$STOPSERVICES" ]] && STOPSERVICES="$DEFAULT_STOPSERVICES"
 [[ -z "$SYSTEMSTATUS" ]] && SYSTEMSTATUS="$DEFAULT_SYSTEMSTATUS"
@@ -6150,6 +6176,14 @@ fi
 	fi
 
 	reportNews
+
+	if isVersionDeprecated "$VERSION"; then
+		writeToConsole $MSG_LEVEL_MINIMAL $MSG_SCRIPT_IS_DEPRECATED "$VERSION"
+		writeToConsole $MSG_LEVEL_MINIMAL $MSG_SCRIPT_IS_DEPRECATED "$VERSION"
+		writeToConsole $MSG_LEVEL_MINIMAL $MSG_SCRIPT_IS_DEPRECATED "$VERSION"
+		VERSION_DEPRECATED=1
+		NEWS_AVAILABLE=1
+	fi
 
 	doit #	no return for backup
 
